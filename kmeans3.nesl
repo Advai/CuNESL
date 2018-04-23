@@ -1,0 +1,132 @@
+% kmeans.nesl %
+
+datatype POINT [float];
+datatype CLUSTER (POINT, [int]);
+
+% calculates distance between a point and a centroid %
+function distSq (POINT(xs), POINT(ys)) : (POINT, POINT) -> float =
+    sum({ (x - y)^2 : x in xs; y in ys })
+$
+
+% computes distance from each cluster for each point and returns index of closest cluster %
+function findMinIndices (points, centers) : ([POINT], [POINT]) -> [(int, int)] =
+    { (min_index({distSq(pt, center): center in centers}), ix)
+    : pt in points; ix in [0 : #points]
+    }
+$
+
+%strips the float array out of the point datatype %
+function coords (POINT(xs)) = xs $
+
+% make a cluster from a sequence of point indices %
+function mkCluster (points, idxs) : ([POINT], [int]) -> CLUSTER =
+    let tr = transpose({coords(points[ix]) : ix in idxs})
+    in
+      CLUSTER(POINT({sum(xs)/float(#xs) : xs in tr}), idxs)
+$
+
+% organizes data into (cluster index, [] of point indices) pairs
+  then calculates new centers and finds the distance the moved //from the initial position
+  terminates if movement is below a certain threshold otherwise //calls a tail-end recursion
+%
+function loop (n, points, clusters) : (int, [POINT], [CLUSTER]) -> (int, [CLUSTER]) =
+    let centers = { c : CLUSTER(c, idxs) in clusters };
+	newPointSets = int_collect(findMinIndices(points, centers));
+	newClusters = { mkCluster (points, idxs) : (id, idxs) in newPointSets };
+	delta = sum({
+	    distSq(center1, center2)
+	  : CLUSTER(center1, idxs1) in newClusters;
+	    CLUSTER(center2, idxs2) in clusters
+	  });
+    in
+      if (delta < 0.001)
+	then (n, newClusters)
+	else loop(n+1, points, newClusters)
+$
+
+% initializes datapoints from datafile %
+function initializePoints file : [char] -> [POINT] =
+    read_object_from_file ([Point([] float)], file)
+$
+function pickCenters (np, nc) : (int, int) -> [int] = [0 : nc] $
+% generates distinct random numbers for random cluster assignments %
+%
+function pickCenters (np, nc) : (int, int) -> [int] =
+    let array = {rand(np) : i in [0: nc]}
+    in
+      if (any(mark_duplicates(array)))
+	then pickCenters(np, nc)
+	else array
+$
+%
+% initialize clusters %
+function initializeClusters (points, nc) : ([POINT], int) -> [CLUSTER] =
+    let centers = { points[ix] : ix in pickCenters (#points, nc) };
+        pointSets = int_collect(findMinIndices(points, centers));
+	clusters = { mkCluster (points, idxs) : (id, idxs) in pointSets };
+    in
+      clusters
+$
+
+% this main function initializes all points and clusters and runs the kmeans clustering on them %
+function kmeans (file, nc) : ([char], int) -> (int, [CLUSTER]) =
+    let points = initializePoints(file);
+	centers = { points[ix] : ix in [0, 1, 2] };
+	pointsets = int_collect(findMinIndices(points, centers));
+	clusters = { mkCluster (points, idxs) : (id, idxs) in pointsets };
+	%clusters = initializeClusters(points, nc);%
+    in
+      loop(
+	1,
+	points,
+	clusters)
+$
+
+function test (file, nc) : ([char], int) -> bool = print_string(@(kmeans(file, nc))) $
+
+color10Points = [
+    POINT([0.952336, 2.185730, 0.668095, 4.265181, -0.991576, -4.292030, 0.768463, -0.521147, -0.882173]),
+    POINT([3.199131, -1.544127, -0.455097, -0.263818, -1.771233, -0.798390, -0.100651, 0.105262, 0.029398]),
+    POINT([3.075083, -0.441309, -1.913580, 4.089628, -1.227209, -3.839006, -1.299485, -0.847008, 0.468063]),
+    POINT([1.466720, 1.236179, -1.947506, -0.513191, 0.348919, 0.609989, -1.143197, 0.412620, 1.128697]),
+    POINT([3.306883, -0.339156, -1.961474, -1.062648, -1.973639, -0.381877, 0.703741, -1.456098, -1.314205]),
+    POINT([2.281597, 1.505240, -2.468138, -0.148480, 0.241840, 0.023264, -0.727113, -0.691266, 0.188638]),
+    POINT([3.092292, -0.935762, -1.566149, 2.495902, -0.101370, -3.143630, -1.375414, -1.293362, 0.236301]),
+    POINT([2.854986, 0.141475, -2.135483, -0.676683, -0.620106, -0.136826, 0.287253, -1.085941, -1.029877]),
+    POINT([2.799083, 0.176811, -2.171632, 1.098571, -0.629443, -0.396157, -0.641768, -0.738597, 0.528793]),
+    POINT([1.892133, 0.387859, -1.685030, -0.354908, -0.789266, -0.370935, -0.591268, -0.219969, 0.720116])
+  ];
+%
+    CLUSTER(POINT([3.199131, -1.544127, -0.455097, -0.263818, -1.771233, -0.798390, -0.100651, 0.105262, 0.029398]), [1, 4, 6]),
+    CLUSTER(POINT([2.281597, 1.505240, -2.468138, -0.148480, 0.241840, 0.023264, -0.727113, -0.691266, 0.188638]), [3, 5, 7, 8, 9]),
+    CLUSTER(POINT([0.952336, 2.185730, 0.668095, 4.265181, -0.991576, -4.292030, 0.768463, -0.521147, -0.882173]), [0, 2])
+%
+
+function kmeansTest (x) : int -> (int, [CLUSTER]) =
+    let centers = { color10Points[ix] : ix in [1, 5, 0] };
+        pointSets = int_collect(findMinIndices(color10Points, centers));
+	clusters = { mkCluster (color10Points, idxs) : (id, idxs) in pointSets };
+    in
+      loop(
+	1,
+	color10Points,
+	clusters)
+$
+
+%
+    POINT([0.952336, 2.185730, 0.668095, 4.265181, -0.991576, -4.292030, 0.768463, -0.521147, -0.882173]),
+    POINT([3.199131, -1.544127, -0.455097, -0.263818, -1.771233, -0.798390, -0.100651, 0.105262, 0.029398]),
+    POINT([3.075083, -0.441309, -1.913580, 4.089628, -1.227209, -3.839006, -1.299485, -0.847008, 0.468063]),
+    POINT([1.466720, 1.236179, -1.947506, -0.513191, 0.348919, 0.609989, -1.143197, 0.412620, 1.128697]),
+    POINT([3.306883, -0.339156, -1.961474, -1.062648, -1.973639, -0.381877, 0.703741, -1.456098, -1.314205]),
+    POINT([2.281597, 1.505240, -2.468138, -0.148480, 0.241840, 0.023264, -0.727113, -0.691266, 0.188638]),
+    POINT([3.092292, -0.935762, -1.566149, 2.495902, -0.101370, -3.143630, -1.375414, -1.293362, 0.236301]),
+    POINT([2.854986, 0.141475, -2.135483, -0.676683, -0.620106, -0.136826, 0.287253, -1.085941, -1.029877]),
+    POINT([2.799083, 0.176811, -2.171632, 1.098571, -0.629443, -0.396157, -0.641768, -0.738597, 0.528793]),
+    POINT([1.892133, 0.387859, -1.685030, -0.354908, -0.789266, -0.370935, -0.591268, -0.219969, 0.720116])
+%
+%
+    CLUSTER(POINT([3.199131, -1.544127, -0.455097, -0.263818, -1.771233, -0.798390, -0.100651, 0.105262, 0.029398]), [1, 4, 6]),
+    CLUSTER(POINT([2.281597, 1.505240, -2.468138, -0.148480, 0.241840, 0.023264, -0.727113, -0.691266, 0.188638]), [3, 5, 7, 8, 9]),
+    CLUSTER(POINT([0.952336, 2.185730, 0.668095, 4.265181, -0.991576, -4.292030, 0.768463, -0.521147, -0.882173]), [0, 2])
+%
